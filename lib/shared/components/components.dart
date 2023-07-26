@@ -25,14 +25,26 @@ Widget defaultTextFormFeild(
         if (value!.isEmpty) {
           return warning;
         }
+        // if (controller.isNull) {
+        //   return 'Password must be at least 6 characters long.';
+        // }
         return null;
       },
       inputFormatters: <TextInputFormatter>[textInputFormatter!],
       decoration: InputDecoration(
-        labelStyle: const TextStyle(color: Colors.white,fontSize: 20),
+        errorBorder: const OutlineInputBorder(
+            borderSide: BorderSide(color: Colors.red),
+            borderRadius: BorderRadius.all(Radius.circular(30))),
+        focusedBorder: const OutlineInputBorder(
+            borderSide: BorderSide(color: Colors.white),
+            borderRadius: BorderRadius.all(Radius.circular(30))),
+        enabledBorder: const OutlineInputBorder(
+            borderSide: BorderSide(color: Colors.white),
+            borderRadius: BorderRadius.all(Radius.circular(30))),
+        labelStyle: const TextStyle(color: Colors.white, fontSize: 20),
         labelText: label,
         prefixIcon: Icon(prefix),
-        border:  OutlineInputBorder(borderSide: BorderSide(color: color)),
+        border: OutlineInputBorder(borderSide: BorderSide(color: color)),
         prefixIconColor: Colors.white,
       ),
     ));

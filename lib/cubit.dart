@@ -9,18 +9,111 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fluttertoast/fluttertoast.dart';
+import 'package:path/path.dart';
+import 'package:sqflite/sqflite.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import 'checking.dart';
 import 'states.dart';
 import 'package:http/http.dart' as http;
 import 'package:local_auth/local_auth.dart';
 import 'package:geolocator/geolocator.dart';
-import 'dart:io';
 
 class BiometricsCubit extends Cubit<BiometricsStates> {
   BiometricsCubit() : super(BiometricsInitStates());
 
   static BiometricsCubit get(context) => BlocProvider.of(context);
+  Database? db;
+  Future<void> createDb() async {
+    // Open the database.
+    db = await openDatabase(
+      'attendanceDb.db',
+      version: 1,
+      onCreate: (db, version) {
+        debugPrint("DB created");
+        // Create the table.
+        db.execute(
+            'CREATE TABLE employee (employee_id INTEGER PRIMARY KEY AUTOINCREMENT,desc VARCHAR NOT NULL)');
+        debugPrint("table created");
+      },
+      onOpen: (db) {
+        debugPrint("DB opend");
+      },
+    );
+  }
+
+  Future<void> insertToDatabase({
+    required String desc,
+  }) async {
+    await db?.transaction((txn) {
+      txn.rawInsert('INSERT INTO employee(desc) VALUES("$desc")').then((value) {
+        print(descc!["desc"]);
+      });
+
+      return Future.delayed(
+        const Duration(microseconds: 0),
+        () {},
+      );
+    });
+    return Future.delayed(const Duration(microseconds: 0));
+  }
+
+  //why isCreated become true although db is not created
+  bool isCreated = false;
+  Future<bool> isDbCreated() async {
+    // Get the path to the database directory
+    String databasesPath = await getDatabasesPath();
+    // Join the database path with the database file name
+    String dbPath = join(databasesPath, 'attendanceDb.db');
+    // Check if the database file exists
+    bool isDbExists = await databaseExists(dbPath);
+    if (isDbExists) {
+      isCreated = true;
+      print("print $isCreated");
+      return true;
+    } else {
+      isCreated = false;
+      print("print $isCreated");
+      return false;
+    }
+  }
+
+  bool isEmpty = true;
+  Future<bool> isTableEmpty() async {
+    WidgetsFlutterBinding.ensureInitialized();
+    // Get the path to the database directory
+    String databasesPath = await getDatabasesPath();
+    // Join the database path with the database file name
+    String dbPath = join(databasesPath, 'attendanceDb.db');
+    // Open the database
+    Database db = await openDatabase(dbPath);
+    //Get the count of rows in the table
+    int? count = Sqflite.firstIntValue(
+        await db.rawQuery('SELECT COUNT(*) FROM employee'));
+    // Check if the count is greater than zero
+    bool hasData = count! > 0;
+    if (hasData) {
+      isEmpty = false;
+      return true;
+    } else {
+      isEmpty = true;
+      return false;
+    }
+    // // Get a list of table names in the database
+    // List<Map<String, dynamic>> tables =
+    //     await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table';");
+    // // Check if the specified table name is in the list
+    // bool tableExists = tables.any((table) => table['name'] == "employee");
+    // if (tableExists) {
+    //   isExist = true;
+    //   return true;
+    // } else {
+    //   isExist = false;
+    //   return false;
+    // }
+  }
+
+  TextEditingController employeeIdController = TextEditingController();
+  TextEditingController passwordController = TextEditingController();
   //BIOMETRICS
   final LocalAuthentication auth = LocalAuthentication();
   bool _isAuthenticated = false;
@@ -211,13 +304,12 @@ class BiometricsCubit extends Cubit<BiometricsStates> {
   List<Map<String, dynamic>> dataList = [];
   late Future<Item> futureAlbum;
   String data = "hi";
+  Map? descc;
 
   Future<void> fetchData() async {
     try {
-      debugPrint("1111 is done");
       final response =
           await http.get(Uri.parse('http://192.168.1.22:5000/get'));
-      debugPrint("2222 is done");
       if (response.statusCode == 200) {
         // Data retrieval successful
         final jsonData = json.decode(response.body);
@@ -264,17 +356,42 @@ class BiometricsCubit extends Cubit<BiometricsStates> {
     }
   }
 
-  String macAddress = "";
+  Future<void> getEmployee({required String id}) async {
+    http
+        .get(Uri.parse('http://192.168.1.22:5000/get_employee/$id'))
+        .then((value) {
+      if (value.statusCode == 200) {
+        // Data retrieval successful
+        final jsonData = json.decode(value.body);
+        // Process and use the retrieved data as needed
+        descc = jsonData;
+        print(descc.toString());
+        emit(AppChangeBottomNavBarState());
+      } else {
+        // Data retrieval failed
+        Fluttertoast.showToast(
+            msg: "ID not found",
+            toastLength: Toast.LENGTH_SHORT,
+            gravity: ToastGravity.BOTTOM,
+            fontSize: 16.0);
+      }
+    }).catchError((error) {
+      Fluttertoast.showToast(
+          msg: "An error occurred during data retrieval: $error",
+          toastLength: Toast.LENGTH_SHORT,
+          gravity: ToastGravity.BOTTOM,
+          fontSize: 16.0);
+      emit(AppChangeBottomNavBarState());
+    });
+  }
+
+  String androidId = "";
   var androidIdPlugin = const AndroidId();
   void mac() async {
     await androidIdPlugin.getId().then((value) {
-      debugPrint("AndroidID: $value");
+      androidId = value!;
+      debugPrint("AndroidID: $androidId");
     });
-    List<NetworkInterface> interfaces = await NetworkInterface.list();
-    for (NetworkInterface interface in interfaces) {
-      macAddress = interface.addresses.join(':');
-      print(macAddress);
-    }
   }
 }
 

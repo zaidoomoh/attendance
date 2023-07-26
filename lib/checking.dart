@@ -22,9 +22,11 @@ class _CheckingScreenStateState extends State<CheckingScreen> {
           return Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Text("mac: ${cubit.macAddress}",style: const TextStyle(fontSize: 20,fontWeight: FontWeight.bold),),
-              const SizedBox(height: 10,),
-              Text(cubit.data,style: const TextStyle(fontSize: 20,fontWeight: FontWeight.bold),),
+              Text(
+                cubit.data,
+                style:
+                    const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
               SizedBox(
                 width: MediaQuery.of(context).size.width,
                 child: Padding(
