@@ -16,3 +16,5 @@ class ExitStates extends BiometricsStates {
 }
 
 class Authenticated extends BiometricsStates {}
+class ImagePicked extends BiometricsStates {}
+class GetData extends BiometricsStates {}

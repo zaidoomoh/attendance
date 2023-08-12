@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:attendance_by_biometrics/cubit.dart';
 import 'package:attendance_by_biometrics/home.dart';
 import 'package:attendance_by_biometrics/shared/components/components.dart';
@@ -5,6 +7,7 @@ import 'package:attendance_by_biometrics/states.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -94,35 +97,36 @@ class _LoginPageState extends State<LoginPage> {
                               style: TextStyle(color: Colors.black)),
                           onPressed: () async {
                             if (formkey.currentState!.validate()) {
+                              // cubit.insertData(data: {
+                              //   "table_name": "",
+                              //   "colmuns": {
+                              //     "device_id": cubit.deviceId,
+                              //   }
+                              // });
                               await cubit
                                   .getEmployee(
                                       id: cubit.employeeIdController.text)
                                   .then((value) async {
-                                Future.delayed(
-                                  const Duration(seconds: 5),
-                                  () async {
+                                Timer(const Duration(seconds: 5), () async {
+                                  if (cubit.employeeInfo!.isNotEmpty) {
                                     await cubit.insertToDatabase(
-                                        desc: cubit.descc!["desc"]);
-
-                                    Navigator.pushReplacement(context,
-                                        MaterialPageRoute(builder: (context) {
-                                      // Use the 'context' obtained from the widget's build method
-                                      return Home();
-                                    }));
-                                  },
-                                );
-
-                                cubit.employeeIdController.clear();
-                                cubit.passwordController.clear();
+                                        desc: cubit.employeeInfo!["desc"]);
+                                    if (mounted) {
+                                      Navigator.pushReplacement(context,
+                                          MaterialPageRoute(builder: (context) {
+                                        return const Home();
+                                      }));
+                                    }
+                                  } else {
+                                    Fluttertoast.showToast(
+                                      msg: "error getting user",
+                                      toastLength: Toast.LENGTH_LONG,
+                                      gravity: ToastGravity.BOTTOM,
+                                    );
+                                  }
+                                });
                               });
                             }
-                            //
-
-                            // Navigator.pushReplacement(
-                            //   context,
-                            //   MaterialPageRoute(
-                            //       builder: (context) => const Home()),
-                            // );
                           },
                         ),
                       ],

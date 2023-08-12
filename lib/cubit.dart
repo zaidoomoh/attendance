@@ -2,16 +2,18 @@
 // ignore_for_file: unused_local_variable
 import 'dart:async';
 import 'dart:convert';
-import 'package:android_id/android_id.dart';
+import 'dart:io';
 import 'package:attendance_by_biometrics/added_points.dart';
+import 'package:device_info_plus/device_info_plus.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:path/path.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
-import 'package:url_launcher/url_launcher_string.dart';
 import 'checking.dart';
 import 'states.dart';
 import 'package:http/http.dart' as http;
@@ -22,7 +24,55 @@ class BiometricsCubit extends Cubit<BiometricsStates> {
   BiometricsCubit() : super(BiometricsInitStates());
 
   static BiometricsCubit get(context) => BlocProvider.of(context);
+
+  //DEVICE ID ==>
+
+  String deviceId = "";
+  Future<String?> getDeviceId(context) async {
+    try {
+      DeviceInfoPlugin deviceInfo = DeviceInfoPlugin();
+      if (Theme.of(context).platform == TargetPlatform.android) {
+        // Get Android ID
+        AndroidDeviceInfo androidInfo = await deviceInfo.androidInfo;
+        print("AndroidID: ${androidInfo.id}");
+        deviceId = androidInfo.id;
+        return androidInfo.id;
+      } else if (Theme.of(context).platform == TargetPlatform.iOS) {
+        // Get iOS ID
+        IosDeviceInfo iosInfo = await deviceInfo.iosInfo;
+        print("IosID: ${iosInfo.identifierForVendor}");
+        deviceId = iosInfo.identifierForVendor!;
+        return iosInfo.identifierForVendor;
+      }
+    } catch (e) {
+      print("Error getting device ID: $e");
+    }
+    return null;
+  }
+
+  //LANGUAGE ==>
+
+  String language = "Ar";
+  Locale? locale;
+
+  Future<void> setLanguage(String lang) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    prefs.setString('language', lang);
+  }
+
+  Future<void> loadLanguage() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    String? getLang = prefs.getString('language');
+    if (getLang != null && getLang.isNotEmpty) {
+      language = getLang;
+    }
+  }
+
+  //DATABASE ==>
+
   Database? db;
+  bool isEmpty = true;
+  List<Map> user = [];
   Future<void> createDb() async {
     // Open the database.
     db = await openDatabase(
@@ -35,10 +85,19 @@ class BiometricsCubit extends Cubit<BiometricsStates> {
             'CREATE TABLE employee (employee_id INTEGER PRIMARY KEY AUTOINCREMENT,desc VARCHAR NOT NULL)');
         debugPrint("table created");
       },
-      onOpen: (db) {
+      onOpen: (db) async {
         debugPrint("DB opend");
+        getDataFromDatabase(db, "employee").then((value) {
+          user = value;
+          emit(GetData());
+          print("user : ${value.toString()}");
+        });
       },
     );
+  }
+
+  Future<List<Map>> getDataFromDatabase(database, tableName) async {
+    return database.rawQuery('SELECT * FROM $tableName ');
   }
 
   Future<void> insertToDatabase({
@@ -46,7 +105,11 @@ class BiometricsCubit extends Cubit<BiometricsStates> {
   }) async {
     await db?.transaction((txn) {
       txn.rawInsert('INSERT INTO employee(desc) VALUES("$desc")').then((value) {
-        print(descc!["desc"]);
+        getDataFromDatabase(db, "employee").then((value) {
+          user = value;
+          emit(GetData());
+          print("user : ${value.toString()}");
+        });
       });
 
       return Future.delayed(
@@ -57,27 +120,6 @@ class BiometricsCubit extends Cubit<BiometricsStates> {
     return Future.delayed(const Duration(microseconds: 0));
   }
 
-  //why isCreated become true although db is not created
-  bool isCreated = false;
-  Future<bool> isDbCreated() async {
-    // Get the path to the database directory
-    String databasesPath = await getDatabasesPath();
-    // Join the database path with the database file name
-    String dbPath = join(databasesPath, 'attendanceDb.db');
-    // Check if the database file exists
-    bool isDbExists = await databaseExists(dbPath);
-    if (isDbExists) {
-      isCreated = true;
-      print("print $isCreated");
-      return true;
-    } else {
-      isCreated = false;
-      print("print $isCreated");
-      return false;
-    }
-  }
-
-  bool isEmpty = true;
   Future<bool> isTableEmpty() async {
     WidgetsFlutterBinding.ensureInitialized();
     // Get the path to the database directory
@@ -90,39 +132,223 @@ class BiometricsCubit extends Cubit<BiometricsStates> {
     int? count = Sqflite.firstIntValue(
         await db.rawQuery('SELECT COUNT(*) FROM employee'));
     // Check if the count is greater than zero
-    bool hasData = count! > 0;
-    if (hasData) {
-      isEmpty = false;
+    //bool hasData = count! > 0;
+    if (count == 0) {
+      isEmpty = true;
       return true;
     } else {
-      isEmpty = true;
+      isEmpty = false;
       return false;
     }
-    // // Get a list of table names in the database
-    // List<Map<String, dynamic>> tables =
-    //     await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table';");
-    // // Check if the specified table name is in the list
-    // bool tableExists = tables.any((table) => table['name'] == "employee");
-    // if (tableExists) {
-    //   isExist = true;
-    //   return true;
-    // } else {
-    //   isExist = false;
-    //   return false;
-    // }
   }
 
-  TextEditingController employeeIdController = TextEditingController();
-  TextEditingController passwordController = TextEditingController();
-  //BIOMETRICS
+  //API ==>
+
+  String data = "hi";
+  Map? employeeInfo;
+
+  Future<void> fetchData() async {
+    try {
+      final response =
+          await http.get(Uri.parse('http://192.168.1.22:5000/get'));
+      if (response.statusCode == 200) {
+        // Data retrieval successful
+        final jsonData = json.decode(response.body);
+        // Process and use the retrieved data as needed
+        data = jsonData.toString();
+        print(data);
+        emit(AppChangeBottomNavBarState());
+      } else {
+        // Data retrieval failed
+        Fluttertoast.showToast(
+          msg: language == "En"
+              ? "Data retrieval failed with status code: ${response.statusCode}"
+              : "فشل استرجاع البيانات: ${response.statusCode}",
+          toastLength: Toast.LENGTH_LONG,
+          gravity: ToastGravity.BOTTOM,
+        );
+      }
+    } catch (error) {
+      // Error occurred during data retrieval
+      data = "did not work";
+      Fluttertoast.showToast(
+        msg: language == "En"
+            ? "An error occurred during data retrieval: $error"
+            : "حدث خطأ اثناء استرجاع البيانات: $error",
+        toastLength: Toast.LENGTH_LONG,
+        gravity: ToastGravity.BOTTOM,
+      );
+      emit(AppChangeBottomNavBarState());
+    }
+  }
+
+  Future<void> insertData({required Map data}) async {
+    final url = Uri.parse(
+        'http://192.168.1.22:5000/insert_all'); // Replace with your server's IP address and port
+    try {
+      // final data = {
+      //   "table_name": "table_test",
+      //   "columns": {
+      //     '[desc]': latAndLongController.text,
+      //   }
+      //   // Replace with the data you want to insert
+      // };
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode(data),
+      );
+      if (response.statusCode == 200) {
+        // Data insertion successful
+        Fluttertoast.showToast(
+          msg: language == "En"
+              ? "Data insertion successful"
+              : "تم ادخال البيانات",
+          toastLength: Toast.LENGTH_LONG,
+          gravity: ToastGravity.BOTTOM,
+        );
+      } else {
+        // Data insertion failed
+        Fluttertoast.showToast(
+          msg: language == "En"
+              ? "Data insertion failed with status code: ${response.statusCode}"
+              : "فشل ادخال البيانات: ${response.statusCode}",
+          toastLength: Toast.LENGTH_LONG,
+          gravity: ToastGravity.BOTTOM,
+        );
+      }
+    } catch (error) {
+      // Error occurred during the HTTP POST request
+      Fluttertoast.showToast(
+        msg: language == "En"
+            ? "An error occurred during data insertion: $error"
+            : "حدث خطأ خلال ادخال البيانات: $error",
+        toastLength: Toast.LENGTH_LONG,
+        gravity: ToastGravity.BOTTOM,
+      );
+    }
+  }
+
+  Future<void> getEmployee({required String id}) async {
+    http
+        .get(Uri.parse('http://192.168.1.22:5000/get_employee/$id'))
+        .then((value) {
+      if (value.statusCode == 200) {
+        // Data retrieval successful
+        final jsonData = json.decode(value.body);
+        // Process and use the retrieved data as needed
+        employeeInfo = jsonData;
+        print(employeeInfo.toString());
+        employeeIdController.clear();
+        passwordController.clear();
+        emit(AppChangeBottomNavBarState());
+      } else {
+        // Data retrieval failed
+        Fluttertoast.showToast(
+          msg: language == "En" ? "ID not found" : "هذا الرقم غير موجود",
+          toastLength: Toast.LENGTH_SHORT,
+          gravity: ToastGravity.BOTTOM,
+        );
+      }
+    }).catchError((error) {
+      Fluttertoast.showToast(
+        msg: language == "En"
+            ? "An error occurred during data retrieval: $error"
+            : "حدث خطأ خلال ادخال البيانات: $error",
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+      );
+      emit(AppChangeBottomNavBarState());
+    });
+  }
+
+  Future<void> yellow() async {
+    final url = Uri.parse(
+        'https://api.yallow.com/a/8a79c4b07aa8b8ca05530c156edb28b28217f23f96fed6ff5ff088b49955eae7/order/add'); // Replace with your server's IP address and port
+    try {
+      final data = {
+        'pickup_lat': '31.952329',
+        'pickup_lng': '35.932154',
+        'preparation_time': '30',
+        'lat': '31.9625314016',
+        'lng': '35.8901908945',
+        'customer_phone': '0796340951',
+        'customer_name': '',
+      };
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode(data),
+      );
+      if (response.statusCode == 200) {
+        // Data insertion successful
+        print('Data insertion successful: ${response.body}');
+      } else {
+        // Data insertion failed
+        print('Data insertion failed with status code: ${response.statusCode}');
+      }
+    } catch (error) {
+      // Error occurred during the HTTP POST request
+      print('An error occurred during data insertion: $error');
+    }
+  }
+
+  //AUTHENTICATION ==>
+
   final LocalAuthentication auth = LocalAuthentication();
   bool _isAuthenticated = false;
-  String timeAndDate = "";
+  LocationPermission? permission;
 
-  setTimeAndDate() {
-    DateTime whenCheckd = DateTime.now();
-    timeAndDate = DateFormat('yyyy-MM-dd – kk:mm:ss').format(whenCheckd);
-    emit(Authenticated());
+  Future<bool> handleLocationPermission(context) async {
+    bool serviceEnabled;
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      Fluttertoast.showToast(
+        msg: language == "En"
+            ? "Location services are disabled. Please enable the services"
+            : "خدمة الموقع معطلة الرجاء تفعيل هذه الخدمة",
+        toastLength: Toast.LENGTH_LONG,
+        gravity: ToastGravity.BOTTOM,
+      );
+      return false;
+    }
+    permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        Fluttertoast.showToast(
+          msg: language == "En"
+              ? "Location permissions are denied settings will open"
+              : "خدمة الموقع معطلة سيتم فتح الاعدادات",
+          toastLength: Toast.LENGTH_LONG,
+          gravity: ToastGravity.BOTTOM,
+        ).then((value) async {
+          Future.delayed(const Duration(seconds: 2), () async {
+            await Geolocator.openAppSettings();
+            //await Geolocator.openLocationSettings();
+          });
+        });
+        return false;
+      }
+    }
+    if (permission == LocationPermission.deniedForever) {
+      Fluttertoast.showToast(
+        msg: language == "En"
+            ? "Location permissions are permanently denied, we cannot request permissions."
+            : "",
+        toastLength: Toast.LENGTH_LONG,
+        gravity: ToastGravity.BOTTOM,
+      ).then((value) async {
+        Future.delayed(const Duration(seconds: 2), () async {
+          await Geolocator.openAppSettings();
+          //await Geolocator.openLocationSettings();
+        });
+      });
+      return false;
+    }
+    //permission granted
+    startListening();
+    return true;
   }
 
   Future<void> canCheck(context) async {
@@ -138,18 +364,16 @@ class BiometricsCubit extends Cubit<BiometricsStates> {
       // );
     } else {
       Fluttertoast.showToast(
-        backgroundColor: Colors.black,
-        fontSize: 25,
-        msg: "BIOMETRICS UNAVAILABLE",
+        msg: language == "En" ? "BIOMETRICS UNAVAILABLE" : "البصمه غير متاحه",
         toastLength: Toast.LENGTH_LONG,
-        gravity: ToastGravity.CENTER,
+        gravity: ToastGravity.BOTTOM,
       ).then((value) {
         SystemNavigator.pop();
       });
     }
   }
 
-  Future<void> authenticate() async {
+  Future<bool> authenticate() async {
     bool canCheckBiometrics = await auth.canCheckBiometrics;
     if (canCheckBiometrics) {
       try {
@@ -163,83 +387,66 @@ class BiometricsCubit extends Cubit<BiometricsStates> {
       if (_isAuthenticated) {
         // User  authenticate
         setTimeAndDate();
+        return true;
       } else {
         // User did not authenticate
+        return false;
       }
     } else {
       // Fingerprint authentication is not available on this device
       // You can show an error message or navigate back to the previous screen
+      return false;
     }
   }
 
-  LocationPermission? permission;
-  Future<bool> handleLocationPermission(context) async {
-    bool serviceEnabled;
-    serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      Fluttertoast.showToast(
-        backgroundColor: Colors.black,
-        fontSize: 15,
-        msg: "Location services are disabled. Please enable the services",
-        toastLength: Toast.LENGTH_LONG,
-        gravity: ToastGravity.CENTER,
-      );
-      return false;
-    }
-    permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) {
-        Fluttertoast.showToast(
-          backgroundColor: Colors.black,
-          fontSize: 15,
-          msg: "Location permissions are denied",
-          toastLength: Toast.LENGTH_LONG,
-          gravity: ToastGravity.CENTER,
-        ).then((value) async {
-          Future.delayed(const Duration(seconds: 2), () async {
-            await Geolocator.openAppSettings();
-            //await Geolocator.openLocationSettings();
-          });
-        });
-        return false;
-      }
-    }
-    if (permission == LocationPermission.deniedForever) {
-      Fluttertoast.showToast(
-        backgroundColor: Colors.black,
-        fontSize: 15,
-        msg:
-            "Location permissions are permanently denied, we cannot request permissions.",
-        toastLength: Toast.LENGTH_LONG,
-        gravity: ToastGravity.CENTER,
-      ).then((value) async {
-        Future.delayed(const Duration(seconds: 2), () async {
-          await Geolocator.openAppSettings();
-          //await Geolocator.openLocationSettings();
-        });
-      });
-      return false;
-    }
-    //permission granted
-    return true;
-  }
+  //IMAGE ==>
 
-  void openMap(double latitude, double longitude) async {
-    String url =
-        'https://www.google.com/maps/search/?api=1&query=$latitude,$longitude';
+  File? imageFile;
 
-    if (await canLaunchUrlString(url)) {
-      await launchUrlString(url);
+  Future<void> selectImage() async {
+    XFile? pickedFile = await ImagePicker().pickImage(
+      source: ImageSource.gallery, // Use ImageSource.camera for camera access
+    );
+    if (pickedFile != null) {
+      String imagePath = pickedFile.path;
+      imageFile = File(pickedFile.path);
+      await saveImagePath(imagePath);
+      emit(ImagePicked());
     } else {
-      throw 'Could not launch $url';
+      imageFile = null;
     }
   }
 
-//37.422251,-122.084879
-//31.927791,35.900282
-//31.923888,35.905617 home
-  List<Map<String, dynamic>>? point = [];
+  Future<void> saveImagePath(String imagePath) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    prefs.setString('imagePath', imagePath);
+  }
+
+  Future<void> loadImagePath() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    String? profilePicturePath = prefs.getString('imagePath');
+    if (profilePicturePath != null && profilePicturePath.isNotEmpty) {
+      imageFile = File(profilePicturePath);
+    }
+  }
+
+  //LOCATION ==>
+
+  double distanceInMeters = 0;
+  List splitLatAndLong = [];
+  List<Map<String, dynamic>> point = [
+    {"latandlong": "37.428851,-122.080056", "distance": 100.0},
+    {"latandlong": "31.923888,35.905617", "distance": 1900.0},
+    {"latandlong": "37.422251,-122.080056", "distance": 50.0},
+    {"latandlong": "37.422238,-122.083751", "distance": 500.0},
+    {"latandlong": "31.923888,35.905617", "distance": 1697.0},
+    {"latandlong": "37.422251,-122.080056", "distance": 50.0},
+    {"latandlong": "31.923888,35.905617", "distance": 1400.0},
+  ];
+  bool inRange = false;
+  String? status;
+  String closePoint = "";
+
   addPoint({required String latAndLong, required String distance}) {
     latAndLong = latAndLongController.text;
     distance = distanceController.text;
@@ -247,16 +454,13 @@ class BiometricsCubit extends Cubit<BiometricsStates> {
       'latandlong': latAndLong,
       'distance': distance,
     };
-    point!.add(formData);
+    point.add(formData);
     latAndLongController.clear();
     distanceController.clear();
   }
 
-  double distanceInMeters = 0;
-  List splitLatAndLong = [];
-
   Future<void> getMyLocation() async {
-    splitLatAndLong = point![0]["latandlong"]!.split(',');
+    splitLatAndLong = point[0]["latandlong"]!.split(',');
     Position position = await Geolocator.getCurrentPosition();
     double latitude = position.latitude;
     double longitude = position.longitude;
@@ -265,133 +469,77 @@ class BiometricsCubit extends Cubit<BiometricsStates> {
     debugPrint('Distance from user to destination: $distanceInMeters meters');
   }
 
-  bool inRange = false;
-  String? status;
-  void startListening({required String latLong, required String distance}) {
-    splitLatAndLong = latLong.split(',');
-    debugPrint(splitLatAndLong.toString());
-    StreamSubscription<Position> positionStream = Geolocator.getPositionStream(
+  StreamSubscription<Position>? positionStream;
+
+  Future<void> startListening() async {
+    positionStream = Geolocator.getPositionStream(
             locationSettings: AndroidSettings(
                 accuracy: LocationAccuracy.best,
-                intervalDuration: const Duration(seconds: 1)))
+                intervalDuration: const Duration(hours: 1)))
         .listen((Position position) {
-      distanceInMeters = Geolocator.distanceBetween(
-          position.latitude,
-          position.longitude,
-          double.parse(splitLatAndLong[0]),
-          double.parse(splitLatAndLong[1]));
-      if (distanceInMeters <= int.parse(distance)) {
-        debugPrint("BEFORE: $inRange");
-        debugPrint("AFTER: $inRange");
-        debugPrint(position.toString());
-        debugPrint(distanceInMeters.toString());
-        emit(EnterStates(inRange = true, status = "IN RANGE"));
-      } else {
-        emit(ExitStates(inRange = false, status = "OUT OF RANGE"));
+      for (var element in point) {
+        debugPrint(
+            "latandlong:: ${element["latandlong"]} dis:: ${element["distance"]}");
+        splitLatAndLong = element["latandlong"].split(',');
+        debugPrint(splitLatAndLong.toString());
+        distanceInMeters = Geolocator.distanceBetween(
+            position.latitude,
+            position.longitude,
+            double.parse(splitLatAndLong[0]),
+            double.parse(splitLatAndLong[1]));
+        if (distanceInMeters <= element["distance"]) {
+          debugPrint("in range: ${element["latandlong"]}");
+          closePoint = element["latandlong"];
+          emit(EnterStates(inRange = true, status = "IN RANGE"));
+          positionStream!.pause();
+          break;
+        } else {
+          emit(ExitStates(inRange = false, status = "OUT OF RANGE"));
+          debugPrint("out of range: ${element["latandlong"]}");
+          if (point.indexOf(element) == point.length - 1) {
+            distanceInMeters = 0;
+            positionStream!.pause();
+            break;
+          }
+        }
       }
     });
   }
+
+  //SCREENS ==>
 
   int bottomBarIndx = 0;
   List<Widget> screens = [const CheckingScreen(), const AddedPoints()];
-  void changeScreenIndex(int index) {
-    bottomBarIndx = index;
-    emit(AppChangeBottomNavBarState());
-  }
 
+  //CONTROLLERS ==>
+
+  TextEditingController employeeIdController = TextEditingController();
+  TextEditingController passwordController = TextEditingController();
   TextEditingController distanceController = TextEditingController();
   TextEditingController latAndLongController = TextEditingController();
-  List<Map<String, dynamic>> dataList = [];
-  late Future<Item> futureAlbum;
-  String data = "hi";
-  Map? descc;
 
-  Future<void> fetchData() async {
-    try {
-      final response =
-          await http.get(Uri.parse('http://192.168.1.22:5000/get'));
-      if (response.statusCode == 200) {
-        // Data retrieval successful
-        final jsonData = json.decode(response.body);
-        // Process and use the retrieved data as needed
-        data = jsonData.toString();
-        print(data);
+  //TIME AND DATE ==>
 
-        emit(AppChangeBottomNavBarState());
-      } else {
-        // Data retrieval failed
-        print('Data retrieval failed with status code: ${response.statusCode}');
-      }
-    } catch (error) {
-      // Error occurred during data retrieval
-      data = "did not work";
-      emit(AppChangeBottomNavBarState());
-      print('An error occurred during data retrieval: $error');
+  String timeAndDate = "";
+
+  setTimeAndDate() {
+    DateTime whenCheckd = DateTime.now();
+    timeAndDate = DateFormat('yyyy-MM-dd - kk:mm:ss').format(whenCheckd);
+    saveCheckingTime(timeAndDate);
+    emit(Authenticated());
+  }
+
+  Future<void> saveCheckingTime(String time) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    prefs.setString('time', time);
+  }
+
+  Future<void> loadCheckingTime() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    String? getTime = prefs.getString('time');
+    if (getTime != null && getTime.isNotEmpty) {
+      timeAndDate = getTime;
     }
-  }
-
-  Future<void> insertData() async {
-    final url = Uri.parse(
-        'http://192.168.1.22:5000/insert'); // Replace with your server's IP address and port
-    try {
-      final data = {
-        'desc': latAndLongController
-            .text, // Replace with the data you want to insert
-      };
-      final response = await http.post(
-        url,
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode(data),
-      );
-      if (response.statusCode == 200) {
-        // Data insertion successful
-        print('Data insertion successful');
-      } else {
-        // Data insertion failed
-        print('Data insertion failed with status code: ${response.statusCode}');
-      }
-    } catch (error) {
-      // Error occurred during the HTTP POST request
-      print('An error occurred during data insertion: $error');
-    }
-  }
-
-  Future<void> getEmployee({required String id}) async {
-    http
-        .get(Uri.parse('http://192.168.1.22:5000/get_employee/$id'))
-        .then((value) {
-      if (value.statusCode == 200) {
-        // Data retrieval successful
-        final jsonData = json.decode(value.body);
-        // Process and use the retrieved data as needed
-        descc = jsonData;
-        print(descc.toString());
-        emit(AppChangeBottomNavBarState());
-      } else {
-        // Data retrieval failed
-        Fluttertoast.showToast(
-            msg: "ID not found",
-            toastLength: Toast.LENGTH_SHORT,
-            gravity: ToastGravity.BOTTOM,
-            fontSize: 16.0);
-      }
-    }).catchError((error) {
-      Fluttertoast.showToast(
-          msg: "An error occurred during data retrieval: $error",
-          toastLength: Toast.LENGTH_SHORT,
-          gravity: ToastGravity.BOTTOM,
-          fontSize: 16.0);
-      emit(AppChangeBottomNavBarState());
-    });
-  }
-
-  String androidId = "";
-  var androidIdPlugin = const AndroidId();
-  void mac() async {
-    await androidIdPlugin.getId().then((value) {
-      androidId = value!;
-      debugPrint("AndroidID: $androidId");
-    });
   }
 }
 
