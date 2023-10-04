@@ -120,6 +120,9 @@ class _CheckingScreenStateState extends State<CheckingScreen> {
                       ),
                     ),
                   ),
+                  ElevatedButton(onPressed: (){
+                    cubit.launchGoogleMaps(37.7749, -122.4194);
+                  }, child: Text("Location"))
                 ],
               ),
             ]),

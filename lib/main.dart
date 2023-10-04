@@ -58,24 +58,24 @@ class MyApp extends StatelessWidget {
                 theme: ThemeData(
                   primarySwatch: Colors.blueGrey,
                 ),
-                home: MyCustomSplashScreen(),
-                // FutureBuilder<bool>(
-                //   future: cubit.isTableEmpty(),
-                //   builder: (context, snapshot) {
-                //     // if (snapshot.connectionState == ConnectionState.waiting) {
-                //     //   // While waiting for the future to complete, you can show a loading indicator or a splash screen
-                //     //   return  const SplashScreen();
-                //     //    // Replace SplashScreen with your loading indicator or splash screen widget
-                //     // }
-                //     if (snapshot.data == true) {
-                //       // Data exists in the table, navigate to the Home screen
-                //       return const LoginPage();
-                //     } else {
-                //       // Data does not exist in the table, show the Login screen
-                //       return const Home();
-                //     }
-                //   },
-                // )
+                 home: //MyCustomSplashScreen(),
+                FutureBuilder<bool>(
+                  future: cubit.isTableEmpty(),
+                  builder: (context, snapshot) {
+                    // if (snapshot.connectionState == ConnectionState.waiting) {
+                    //   // While waiting for the future to complete, you can show a loading indicator or a splash screen
+                    //   return  const SplashScreen();
+                    //    // Replace SplashScreen with your loading indicator or splash screen widget
+                    // }
+                    if (snapshot.data == true) {
+                      // Data exists in the table, navigate to the Home screen
+                      return const LoginPage();
+                    } else {
+                      // Data does not exist in the table, show the Login screen
+                      return const Home();
+                    }
+                  },
+                )
                 );
           }),
     );

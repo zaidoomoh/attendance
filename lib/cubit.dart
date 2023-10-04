@@ -14,6 +14,7 @@ import 'package:fluttertoast/fluttertoast.dart';
 import 'package:path/path.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'checking.dart';
 import 'states.dart';
 import 'package:http/http.dart' as http;
@@ -24,6 +25,17 @@ class BiometricsCubit extends Cubit<BiometricsStates> {
   BiometricsCubit() : super(BiometricsInitStates());
 
   static BiometricsCubit get(context) => BlocProvider.of(context);
+
+  void launchGoogleMaps(double latitude, double longitude) async { 
+  final String googleMapsUrl =
+      'https://www.google.com/maps/search/?api=1&query=$latitude,$longitude';
+
+  if (await canLaunch(googleMapsUrl)) {
+    await launch(googleMapsUrl);
+  } else {
+    throw 'Could not launch Google Maps';
+  }
+}
 
   //DEVICE ID ==>
 
