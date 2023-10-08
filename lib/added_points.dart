@@ -1,8 +1,6 @@
-import 'package:attendance_by_biometrics/states.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:animator/animator.dart';
-import 'cubit.dart';
+import 'package:attendance_by_biometrics/index.dart';
+
 
 class AddedPoints extends StatefulWidget {
   const AddedPoints({super.key});

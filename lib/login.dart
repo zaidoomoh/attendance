@@ -1,13 +1,5 @@
-import 'dart:async';
-
-import 'package:attendance_by_biometrics/cubit.dart';
-import 'package:attendance_by_biometrics/home.dart';
-import 'package:attendance_by_biometrics/shared/components/components.dart';
-import 'package:attendance_by_biometrics/states.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:fluttertoast/fluttertoast.dart';
+import 'package:attendance_by_biometrics/index.dart';
+import 'shared/components/components.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});

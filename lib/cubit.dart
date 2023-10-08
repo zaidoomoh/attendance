@@ -1,30 +1,20 @@
 //import 'package:cloud_firestore/cloud_firestore.dart';
 // ignore_for_file: unused_local_variable
-import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
-import 'package:attendance_by_biometrics/added_points.dart';
-import 'package:device_info_plus/device_info_plus.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:fluttertoast/fluttertoast.dart';
-import 'package:path/path.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:sqflite/sqflite.dart';
-import 'package:url_launcher/url_launcher.dart';
-import 'checking.dart';
-import 'states.dart';
+export 'package:flutter/material.dart';
+import 'package:attendance_by_biometrics/index.dart';
 import 'package:http/http.dart' as http;
-import 'package:local_auth/local_auth.dart';
-import 'package:geolocator/geolocator.dart';
+
 
 class BiometricsCubit extends Cubit<BiometricsStates> {
   BiometricsCubit() : super(BiometricsInitStates());
 
   static BiometricsCubit get(context) => BlocProvider.of(context);
+
+  void changeScren(index){
+    bottomBarIndx = index;
+    emit(ChangeScreen());
+  }
 
   void launchGoogleMaps(double latitude, double longitude) async { 
   final String googleMapsUrl =
@@ -519,8 +509,8 @@ class BiometricsCubit extends Cubit<BiometricsStates> {
   }
 
   //SCREENS ==>
-
   int bottomBarIndx = 0;
+  
   List<Widget> screens = [const CheckingScreen(), const AddedPoints()];
 
   //CONTROLLERS ==>
